@@ -58,6 +58,10 @@ jobs:
         shell: bash
         run: make
 
+      - name: Test S3 bucket listing with local HTTP fixtures
+        shell: bash
+        run: python3 scripts/test_s3_buckets.py build/release/duckdb
+
       - name: Start S3/HTTP test server
         shell: bash
         run: |

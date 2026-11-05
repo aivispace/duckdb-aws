@@ -1,0 +1,77 @@
+# name: test/sql/s3/s3_buckets.test
+# description: S3 bucket listing schema, arguments, identity selection and external access guard
+# group: [s3]
+
+require aws
+
+require httpfs
+
+statement ok
+LOAD aws;
+
+statement ok
+LOAD httpfs;
+
+statement ok
+SET aws_default_credentials = false;
+
+# Schema inspection must not require credentials or contact AWS.
+query IIIIII
+DESCRIBE SELECT * FROM s3_buckets();
+----
+name	VARCHAR	YES	NULL	NULL	NULL
+region	VARCHAR	YES	NULL	NULL	NULL
+created_at	TIMESTAMP WITH TIME ZONE	YES	NULL	NULL	NULL
+
+statement error
+FROM s3_buckets(region := NULL);
+----
+region must not be NULL
+
+statement error
+FROM s3_buckets(region := '');
+----
+region must not be empty
+
+statement error
+FROM s3_buckets(secret := NULL);
+----
+secret must not be NULL
+
+statement error
+FROM s3_buckets(secret := '');
+----
+secret must not be empty
+
+statement error
+FROM s3_buckets();
+----
+No AWS credentials found
+
+statement error
+FROM s3_buckets(secret := 'missing_s3_listing_secret');
+----
+Secret with name "missing_s3_listing_secret" not found
+
+statement ok
+CREATE SECRET s3_listing_a (TYPE aws, KEY_ID 'test', SECRET 'test', REGION 'eu-central-1');
+
+statement ok
+CREATE SECRET s3_listing_b (TYPE aws, KEY_ID 'test', SECRET 'test', REGION 'eu-central-1');
+
+statement error
+FROM s3_buckets();
+----
+Found 2 secrets of type "aws"
+
+# The runtime guard must apply to already-bound queries with explicit credentials too.
+statement ok
+PREPARE list_buckets AS SELECT * FROM s3_buckets(secret := 's3_listing_a');
+
+statement ok
+SET enable_external_access = false;
+
+statement error
+EXECUTE list_buckets;
+----
+s3_buckets: listing S3 buckets is disabled through configuration

@@ -141,9 +141,49 @@ Configuration is through environment variables:
 
 The script can also be called directly as `python3 scripts/quack_redshift.py <action> [--force]`, where the action is `setup`, `check`, `cleanup`, or `manual-test`.
 
+## Listing S3 buckets
+
+```sql
+LOAD aws;
+
+FROM s3_buckets();
+FROM s3_buckets(region := 'eu-central-1');
+FROM s3_buckets(region := 'eu-central-1', secret := 'my_aws_secret');
+```
+
+`s3_buckets` lists general-purpose buckets owned by the authenticated account. It returns
+`name VARCHAR`, `region VARCHAR`, and `created_at TIMESTAMP WITH TIME ZONE`. The timestamp
+is S3's reported creation date, which can change after bucket configuration updates.
+Directory buckets, S3 table buckets, and buckets merely shared with the caller are not included.
+
+Without `region`, the listing covers all regions in the caller's AWS partition. An explicit
+`region` filters the listing server-side and selects the matching regional endpoint. A region
+configured on a secret, in `s3_region`, in the environment, or in the AWS profile selects the
+endpoint but does not filter the results. Endpoint selection uses that order, with an explicit
+argument taking precedence and the SDK's default as the final fallback.
+
+Authentication uses an existing `aws` or `s3` secret. Without `secret`, a single explicit `aws`
+secret is preferred over a single explicit `s3` secret, then the default AWS credential chain
+is used. If multiple secrets of the preferred type exist, specify one by name. Explicit NULL
+or empty arguments are rejected.
+
+The caller needs `s3:ListAllMyBuckets`; `s3:ListBucket` alone is not sufficient. Requests are
+paginated automatically. AWS errors fail the query rather than returning an empty or silently
+incomplete listing. The function makes only listing requests, does not scan objects, and is
+blocked by `enable_external_access = false`.
+
+This function uses AWS SDK endpoints, including its endpoint environment/profile overrides.
+S3-specific secret settings such as `ENDPOINT` and `URL_STYLE` are not applied; S3-compatible
+providers are outside this function's supported scope.
+
 ## Tests
 
 - [Redshift test setup](test/sql/redshift/README.md)
+- S3 bucket listing: `build/release/test/unittest '*/test/sql/s3/s3_buckets.test'`
+- S3 bucket listing HTTP fixtures: `python3 scripts/test_s3_buckets.py build/release/duckdb`
+  (requires built `aws` and `httpfs` extensions). This runs a temporary loopback HTTP server
+  in the foreground test process, uses test credentials, and exercises both SDK and DuckDB
+  HTTP transports without contacting AWS.
 
 ## Documentation
 
